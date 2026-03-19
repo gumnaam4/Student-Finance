@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Student Finance Management System</title>
+
 </head>
 
 <body>
