@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deposit — Student Finance</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="dashboard.html" class="nav-logo">
+        <div class="nav-logo-icon">₹</div>
+        <span class="nav-logo-text">StudentFinance</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="dashboard.html">📊 Dashboard</a></li>
+        <li><a href="deposit.html" class="active">💰 Deposit</a></li>
+        <li><a href="withdraw.html">💸 Withdraw</a></li>
+        <li><a href="goals.html">🎯 Goals</a></li>
+      </ul>
+      <div class="nav-right">
+        <span class="nav-user">Hello, <strong id="nav-name">—</strong></span>
+        <button class="btn-logout" onclick="logout()">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="page-content">
+    <div class="page-header">
+      <h1>💰 Make a Deposit</h1>
+      <p>Deposit money and set your daily spending limit automatically.</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+
+      <!-- Deposit Form -->
+      <div class="form-card">
+        <h2>New Deposit</h2>
+        <p>Enter the amount and how many days it should last.</p>
+
+        <div id="deposit-alert"></div>
+
+        <div class="form-group">
+          <label>Deposit Amount (₹)</label>
+          <input type="number" id="dep-amount" placeholder="e.g. 5000" min="1" oninput="calcLimit()" />
+        </div>
+
+        <div class="form-group">
+          <label>Duration (Days)</label>
+          <input type="number" id="dep-days" placeholder="e.g. 30" min="1" max="365" oninput="calcLimit()" />
+        </div>
+
+        <div id="calc-box" class="calc-result hidden">
+          <div class="label">Calculated Daily Limit</div>
+          <span class="value" id="calc-value">₹0.00</span>
+          <div class="label" style="margin-top:4px">per day</div>
+        </div>
+
+        <div class="info-box" id="info-box">
+          Enter amount and duration above to see your <strong>daily allowance</strong>.
+        </div>
+
+        <button class="btn btn-primary" onclick="submitDeposit()">Confirm Deposit →</button>
+      </div>
+
+      <!-- How it works + history -->
+      <div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span class="card-title">How It Works</span></div>
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div class="feature-item" style="gap:14px">
+              <div class="feature-dot"></div>
+              <div><strong style="display:block;margin-bottom:2px">Deposit your budget</strong>
+                <span style="font-size:0.85rem;color:var(--text-secondary)">Enter total amount for the period.</span></div>
+            </div>
+            <div class="feature-item" style="gap:14px">
+              <div class="feature-dot"></div>
+              <div><strong style="display:block;margin-bottom:2px">Set the duration</strong>
+                <span style="font-size:0.85rem;color:var(--text-secondary)">Choose how many days it should last.</span></div>
+            </div>
+            <div class="feature-item" style="gap:14px">
+              <div class="feature-dot"></div>
+              <div><strong style="display:block;margin-bottom:2px">Auto daily limit</strong>
+                <span style="font-size:0.85rem;color:var(--text-secondary)">System divides total ÷ days for your limit.</span></div>
+            </div>
+            <div class="feature-item" style="gap:14px">
+              <div class="feature-dot"></div>
+              <div><strong style="display:block;margin-bottom:2px">Controlled spending</strong>
+                <span style="font-size:0.85rem;color:var(--text-secondary)">Withdraw only up to your daily allowance.</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Deposit History</span>
+          </div>
+          <div id="deposit-history">
+            <div class="loading"><div class="spinner"></div> Loading…</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+  <script>
+    const student = requireAuth();
+    document.getElementById('nav-name').textContent = student.name;
+
+    function calcLimit() {
+      const amt  = parseFloat(document.getElementById('dep-amount').value);
+      const days = parseInt(document.getElementById('dep-days').value);
+      const box  = document.getElementById('calc-box');
+      const info = document.getElementById('info-box');
+
+      if (amt > 0 && days > 0) {
+        const daily = (amt / days).toFixed(2);
+        document.getElementById('calc-value').textContent = `₹${parseFloat(daily).toLocaleString('en-IN', {minimumFractionDigits:2})}`;
+        box.classList.remove('hidden');
+        info.innerHTML = `Your deposit of <strong>₹${amt.toLocaleString('en-IN')}</strong> for <strong>${days} days</strong>
+          gives you a daily spending limit of <strong>₹${daily}</strong>.`;
+      } else {
+        box.classList.add('hidden');
+        info.innerHTML = 'Enter amount and duration above to see your <strong>daily allowance</strong>.';
+      }
+    }
+
+    async function submitDeposit() {
+      const amount       = parseFloat(document.getElementById('dep-amount').value);
+      const duration_days = parseInt(document.getElementById('dep-days').value);
+
+      if (!amount || !duration_days || amount <= 0 || duration_days <= 0)
+        return showAlert('deposit-alert', 'Please enter valid amount and duration.', 'error');
+
+      try {
+        const data = await apiFetch('/api/deposits', {
+          method: 'POST',
+          body: JSON.stringify({ student_id: student.student_id, amount, duration_days }),
+        });
+        showAlert('deposit-alert', `✅ Deposit of ₹${amount} successful! Daily limit: ₹${data.daily_limit}`, 'success');
+        document.getElementById('dep-amount').value = '';
+        document.getElementById('dep-days').value   = '';
+        document.getElementById('calc-box').classList.add('hidden');
+        loadHistory();
+      } catch (e) {
+        showAlert('deposit-alert', e.message, 'error');
+      }
+    }
+
+    async function loadHistory() {
+      const el = document.getElementById('deposit-history');
+      try {
+        const data = await apiFetch(`/api/deposits/student/${student.student_id}`);
+        if (!data.deposits.length) {
+          el.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No deposits yet.</p></div>';
+          return;
+        }
+        el.innerHTML = `<div class="txn-list">
+          ${data.deposits.map(d => `
+            <div class="txn-item">
+              <div class="txn-icon deposit">💰</div>
+              <div class="txn-info">
+                <div class="txn-desc">₹${parseFloat(d.amount).toLocaleString('en-IN')} for ${d.duration_days} days</div>
+                <div class="txn-date">${new Date(d.deposit_date).toLocaleDateString('en-IN')} → ${new Date(d.end_date).toLocaleDateString('en-IN')}</div>
+              </div>
+              <div>
+                <div class="txn-amount deposit">₹${parseFloat(d.daily_limit).toFixed(2)}/day</div>
+                <div style="font-size:0.72rem;text-align:right;margin-top:2px">
+                  ${d.is_active ? '<span style="color:var(--green)">● Active</span>' : '<span style="color:var(--text-muted)">Inactive</span>'}
+                </div>
+              </div>
+            </div>`).join('')}
+        </div>`;
+      } catch (e) {
+        el.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+      }
+    }
+
+    function showAlert(id, msg, type) {
+      const el = document.getElementById(id);
+      el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+      setTimeout(() => el.innerHTML = '', 6000);
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
