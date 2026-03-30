@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — Student Finance</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Navbar ───────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="dashboard.html" class="nav-logo">
+        <div class="nav-logo-icon">₹</div>
+        <span class="nav-logo-text">StudentFinance</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="dashboard.html" class="active">📊 Dashboard</a></li>
+        <li><a href="deposit.html">💰 Deposit</a></li>
+        <li><a href="withdraw.html">💸 Withdraw</a></li>
+        <li><a href="goals.html">🎯 Goals</a></li>
+      </ul>
+      <div class="nav-right">
+        <span class="nav-user">Hello, <strong id="nav-name">—</strong></span>
+        <button class="btn-logout" onclick="logout()">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ── Main Content ─────────────────────────────────── -->
+  <main class="page-content">
+
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <p id="dash-greeting">Loading your financial overview…</p>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="loading"><div class="spinner"></div> Loading…</div>
+    </div>
+
+    <!-- Dashboard grid -->
+    <div class="dashboard-grid" id="dashboard-grid" style="display:none">
+
+      <!-- Daily Allowance -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Today's Allowance</span>
+          <span id="allowance-date" class="text-muted" style="font-size:0.78rem"></span>
+        </div>
+        <div id="allowance-content"></div>
+      </div>
+
+      <!-- Recent Transactions -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Recent Transactions</span>
+          <a href="#" onclick="loadTransactions()" style="font-size:0.82rem; color:var(--gold); text-decoration:none;">View all</a>
+        </div>
+        <div id="recent-txns"></div>
+      </div>
+
+      <!-- Goals Progress -->
+      <div class="card" style="grid-column: 1 / -1">
+        <div class="card-header">
+          <span class="card-title">Savings Goals</span>
+          <a href="goals.html" style="font-size:0.82rem; color:var(--gold); text-decoration:none;">Manage →</a>
+        </div>
+        <div id="goals-content"></div>
+      </div>
+
+    </div>
+
+    <!-- All Transactions (hidden by default) -->
+    <div class="card mt-24 hidden" id="all-txns-card">
+      <div class="card-header">
+        <span class="card-title">All Transactions</span>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('all-txns-card').classList.add('hidden')">✕ Close</button>
+      </div>
+      <div id="all-txns-list"></div>
+    </div>
+
+  </main>
+
+  <script src="script.js"></script>
+  <script>
+    const student = requireAuth();
+    document.getElementById('nav-name').textContent = student.name;
+
+    const today = new Date().toLocaleDateString('en-IN', { weekday:'long', month:'long', day:'numeric' });
+    document.getElementById('allowance-date').textContent = today;
+
+    async function loadDashboard() {
+      try {
+        const data = await apiFetch(`/api/students/${student.student_id}/dashboard`);
+        renderStats(data);
+        renderAllowance(data.active_deposit);
+        renderRecentTxns(data.recent_transactions);
+        renderGoals(data.goals);
+        document.getElementById('stats-grid').innerHTML = '';
+        renderStats(data);
+        document.getElementById('dashboard-grid').style.display = 'grid';
+        document.getElementById('dash-greeting').textContent =
+          `Good ${getGreeting()}, ${student.name}! Here's your financial summary.`;
+      } catch (e) {
+        document.getElementById('stats-grid').innerHTML =
+          `<div class="alert alert-error">Failed to load dashboard: ${e.message}</div>`;
+      }
+    }
+
+    function getGreeting() {
+      const h = new Date().getHours();
+      return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+    }
+
+    function renderStats(data) {
+      const balance  = parseFloat(data.account.balance).toFixed(2);
+      const deposit  = data.active_deposit;
+      const allowRem = deposit ? parseFloat(deposit.remaining_amount || deposit.daily_limit).toFixed(2) : '—';
+      const goals    = data.goals || [];
+      const goalsActive = goals.length;
+
+      document.getElementById('stats-grid').innerHTML = `
+        <div class="stat-card">
+          <div class="stat-icon">💼</div>
+          <div class="stat-label">Account Balance</div>
+          <div class="stat-value gold">₹${Number(balance).toLocaleString('en-IN')}</div>
+          <div class="stat-sub">Total available funds</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-icon">📅</div>
+          <div class="stat-label">Today's Remaining</div>
+          <div class="stat-value green">${allowRem !== '—' ? '₹' + Number(allowRem).toLocaleString('en-IN') : '—'}</div>
+          <div class="stat-sub">Daily spending allowance left</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-icon">🎯</div>
+          <div class="stat-label">Active Goals</div>
+          <div class="stat-value" style="color:var(--blue)">${goalsActive}</div>
+          <div class="stat-sub">Savings targets in progress</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">📈</div>
+          <div class="stat-label">Daily Limit</div>
+          <div class="stat-value">${deposit ? '₹' + parseFloat(deposit.daily_limit).toFixed(2) : '—'}</div>
+          <div class="stat-sub">${deposit ? `${deposit.duration_days} day plan` : 'No active deposit'}</div>
+        </div>
+      `;
+    }
+
+    function renderAllowance(deposit) {
+      const el = document.getElementById('allowance-content');
+      if (!deposit) {
+        el.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">💳</div>
+            <h3>No Active Deposit</h3>
+            <p>Make a deposit to activate your daily allowance.</p>
+            <a href="deposit.html" class="btn btn-primary btn-sm" style="width:auto;margin-top:14px;">Make a Deposit</a>
+          </div>`;
+        return;
+      }
+      const allowed   = parseFloat(deposit.allowed_amount || deposit.daily_limit);
+      const withdrawn = parseFloat(deposit.withdrawn_amount || 0);
+      const remaining = parseFloat(deposit.remaining_amount || deposit.daily_limit);
+      const pct       = Math.round((remaining / allowed) * 100);
+      const deg       = Math.round((pct / 100) * 360);
+
+      el.innerHTML = `
+        <div class="allowance-meter">
+          <div class="allowance-circle" style="--pct: ${deg}deg">
+            <div class="allowance-circle-text">
+              <span class="pct">${pct}%</span>
+              <span class="sub">remaining</span>
+            </div>
+          </div>
+          <div class="allowance-stats">
+            <div class="allowance-stat">
+              <span class="val text-gold">₹${allowed.toFixed(2)}</span>
+              <span class="lbl">Daily Limit</span>
+            </div>
+            <div class="allowance-stat">
+              <span class="val text-red">₹${withdrawn.toFixed(2)}</span>
+              <span class="lbl">Spent Today</span>
+            </div>
+            <div class="allowance-stat">
+              <span class="val text-green">₹${remaining.toFixed(2)}</span>
+              <span class="lbl">Remaining</span>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function renderRecentTxns(txns) {
+      const el = document.getElementById('recent-txns');
+      if (!txns || txns.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="icon">📄</div><p>No transactions yet.</p></div>`;
+        return;
+      }
+      el.innerHTML = `<div class="txn-list">${txns.map(txnRow).join('')}</div>`;
+    }
+
+    function txnRow(t) {
+      const icons = { deposit: '⬆️', withdraw: '⬇️', goal_contribution: '🎯' };
+      const types = { deposit: 'deposit', withdraw: 'withdraw', goal_contribution: 'goal' };
+      const signs = { deposit: '+', withdraw: '−', goal_contribution: '−' };
+      const cls   = types[t.transaction_type] || 'deposit';
+      const date  = new Date(t.transaction_date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' });
+      return `
+        <div class="txn-item">
+          <div class="txn-icon ${cls}">${icons[t.transaction_type]}</div>
+          <div class="txn-info">
+            <div class="txn-desc">${t.description || t.transaction_type}</div>
+            <div class="txn-date">${date}</div>
+          </div>
+          <div class="txn-amount ${cls}">${signs[t.transaction_type]}₹${parseFloat(t.amount).toFixed(2)}</div>
+        </div>`;
+    }
+
+    function renderGoals(goals) {
+      const el = document.getElementById('goals-content');
+      if (!goals || goals.length === 0) {
+        el.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">🎯</div>
+            <h3>No Savings Goals</h3>
+            <p>Set a target and start saving towards it!</p>
+            <a href="goals.html" class="btn btn-primary btn-sm" style="width:auto;margin-top:14px;">Create Goal</a>
+          </div>`;
+        return;
+      }
+      el.innerHTML = `<div style="display:flex;flex-direction:column;gap:14px;">
+        ${goals.map(g => `
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:600">${g.goal_name}</span>
+              <span class="mono" style="font-size:0.85rem;color:var(--text-secondary)">
+                ₹${parseFloat(g.saved_amount).toFixed(0)} / ₹${parseFloat(g.target_amount).toFixed(0)}
+              </span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width:${Math.min(g.progress_pct,100)}%"></div>
+            </div>
+            <div class="progress-label">
+              <span>${g.progress_pct}% saved</span>
+              ${g.deadline ? `<span>Due ${new Date(g.deadline).toLocaleDateString('en-IN')}</span>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>`;
+    }
+
+    async function loadTransactions() {
+      const card = document.getElementById('all-txns-card');
+      card.classList.remove('hidden');
+      const listEl = document.getElementById('all-txns-list');
+      listEl.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+      try {
+        const data = await apiFetch(`/api/transactions/student/${student.student_id}`);
+        if (!data.transactions.length) {
+          listEl.innerHTML = `<div class="empty-state"><div class="icon">📄</div><p>No transactions yet.</p></div>`;
+          return;
+        }
+        listEl.innerHTML = `<div class="txn-list">${data.transactions.map(txnRow).join('')}</div>`;
+      } catch (e) {
+        listEl.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+      }
+      card.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>
