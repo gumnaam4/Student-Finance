@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Withdraw — Student Finance</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="dashboard.html" class="nav-logo">
+        <div class="nav-logo-icon">₹</div>
+        <span class="nav-logo-text">StudentFinance</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="dashboard.html">📊 Dashboard</a></li>
+        <li><a href="deposit.html">💰 Deposit</a></li>
+        <li><a href="withdraw.html" class="active">💸 Withdraw</a></li>
+        <li><a href="goals.html">🎯 Goals</a></li>
+      </ul>
+      <div class="nav-right">
+        <span class="nav-user">Hello, <strong id="nav-name">—</strong></span>
+        <button class="btn-logout" onclick="logout()">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="page-content">
+    <div class="page-header">
+      <h1>💸 Withdraw Money</h1>
+      <p>Spend within your daily allowance limit.</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">
+
+      <!-- Withdraw Form -->
+      <div class="form-card">
+        <h2>New Withdrawal</h2>
+        <p>Enter how much you want to spend today.</p>
+
+        <div id="withdraw-alert"></div>
+
+        <!-- Allowance status card -->
+        <div id="allowance-status">
+          <div class="loading"><div class="spinner"></div> Loading allowance…</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="form-group">
+          <label>Withdrawal Amount (₹)</label>
+          <input type="number" id="with-amount" placeholder="e.g. 200" min="1" />
+        </div>
+
+        <div class="form-group">
+          <label>Description (optional)</label>
+          <input type="text" id="with-desc" placeholder="e.g. Lunch, Transport, Books…" />
+        </div>
+
+        <button class="btn btn-primary" onclick="submitWithdraw()" id="with-btn">Withdraw →</button>
+
+      </div>
+
+      <!-- Today's spending tracker -->
+      <div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span class="card-title">Today's Spending</span></div>
+          <div id="today-tracker">
+            <div class="loading"><div class="spinner"></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><span class="card-title">Recent Withdrawals</span></div>
+          <div id="recent-withdrawals">
+            <div class="loading"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+  <script>
+    const student = requireAuth();
+    document.getElementById('nav-name').textContent = student.name;
+
+    let currentAllowance = null;
+
+    async function loadAllowance() {
+      const statusEl  = document.getElementById('allowance-status');
+      const trackerEl = document.getElementById('today-tracker');
+
+      try {
+        const data = await apiFetch(`/api/deposits/allowance/${student.student_id}`);
+        currentAllowance = data.allowance;
+
+        if (!currentAllowance) {
+          const msg = `<div class="alert alert-info">
+            No active deposit found. <a href="deposit.html" style="color:var(--blue)">Make a deposit first</a>.
+          </div>`;
+          statusEl.innerHTML  = msg;
+          trackerEl.innerHTML = msg;
+          document.getElementById('with-btn').disabled = true;
+          document.getElementById('with-btn').style.opacity = '0.5';
+          return;
+        }
+
+        const allowed   = parseFloat(currentAllowance.allowed_amount);
+        const withdrawn = parseFloat(currentAllowance.withdrawn_amount);
+        const remaining = parseFloat(currentAllowance.remaining_amount);
+        const pct       = Math.min(Math.round((withdrawn / allowed) * 100), 100);
+
+        statusEl.innerHTML = `
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center;margin-bottom:4px">
+            <div class="card-sm" style="background:var(--gold-glow);border:1px solid rgba(240,165,0,0.2)">
+              <div class="stat-label">Daily Limit</div>
+              <div class="mono" style="font-size:1.1rem;color:var(--gold)">₹${allowed.toFixed(2)}</div>
+            </div>
+            <div class="card-sm" style="background:var(--red-bg);border:1px solid rgba(239,68,68,0.2)">
+              <div class="stat-label">Spent</div>
+              <div class="mono" style="font-size:1.1rem;color:var(--red)">₹${withdrawn.toFixed(2)}</div>
+            </div>
+            <div class="card-sm" style="background:var(--green-bg);border:1px solid rgba(16,185,129,0.2)">
+              <div class="stat-label">Remaining</div>
+              <div class="mono" style="font-size:1.1rem;color:var(--green)">₹${remaining.toFixed(2)}</div>
+            </div>
+          </div>`;
+
+        trackerEl.innerHTML = `
+          <div style="padding:8px 0">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:0.85rem">
+              <span style="color:var(--text-secondary)">Spent today</span>
+              <span class="mono">${pct}%</span>
+            </div>
+            <div class="progress-bar" style="height:10px">
+              <div class="progress-fill" style="width:${pct}%;background:${pct > 80 ? 'var(--red)' : 'linear-gradient(90deg,var(--gold-dark),var(--gold-light))'}"></div>
+            </div>
+            <div style="margin-top:10px;font-size:0.82rem;color:var(--text-muted)">
+              Plan ends: ${new Date(currentAllowance.end_date).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'})}
+            </div>
+          </div>`;
+
+      } catch (e) {
+        statusEl.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+      }
+    }
+
+    async function loadRecentWithdrawals() {
+      const el = document.getElementById('recent-withdrawals');
+      try {
+        const data = await apiFetch(`/api/transactions/student/${student.student_id}`);
+        const withdrawals = data.transactions.filter(t => t.transaction_type === 'withdraw').slice(0, 6);
+        if (!withdrawals.length) {
+          el.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No withdrawals yet.</p></div>';
+          return;
+        }
+        el.innerHTML = `<div class="txn-list">
+          ${withdrawals.map(t => `
+            <div class="txn-item">
+              <div class="txn-icon withdraw">⬇️</div>
+              <div class="txn-info">
+                <div class="txn-desc">${t.description || 'Withdrawal'}</div>
+                <div class="txn-date">${new Date(t.transaction_date).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+              </div>
+              <div class="txn-amount withdraw">−₹${parseFloat(t.amount).toFixed(2)}</div>
+            </div>`).join('')}
+        </div>`;
+      } catch (e) {
+        el.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+      }
+    }
+
+    async function submitWithdraw() {
+      const amount = parseFloat(document.getElementById('with-amount').value);
+      const desc   = document.getElementById('with-desc').value.trim();
+
+      if (!amount || amount <= 0)
+        return showAlert('withdraw-alert', 'Please enter a valid amount.', 'error');
+
+      try {
+        const data = await apiFetch('/api/transactions/withdraw', {
+          method: 'POST',
+          body: JSON.stringify({ student_id: student.student_id, amount, description: desc || undefined }),
+        });
+        showAlert('withdraw-alert', `✅ ₹${amount} withdrawn. Remaining today: ₹${parseFloat(data.remaining_allowance).toFixed(2)}`, 'success');
+        document.getElementById('with-amount').value = '';
+        document.getElementById('with-desc').value   = '';
+        loadAllowance();
+        loadRecentWithdrawals();
+      } catch (e) {
+        showAlert('withdraw-alert', e.message, 'error');
+      }
+    }
+
+    function showAlert(id, msg, type) {
+      const el = document.getElementById(id);
+      el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+      setTimeout(() => el.innerHTML = '', 6000);
+    }
+
+    loadAllowance();
+    loadRecentWithdrawals();
+  </script>
+</body>
+</html>
