@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Savings Goals — Student Finance</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="nav-inner">
+      <a href="dashboard.html" class="nav-logo">
+        <div class="nav-logo-icon">₹</div>
+        <span class="nav-logo-text">StudentFinance</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="dashboard.html">📊 Dashboard</a></li>
+        <li><a href="deposit.html">💰 Deposit</a></li>
+        <li><a href="withdraw.html">💸 Withdraw</a></li>
+        <li><a href="goals.html" class="active">🎯 Goals</a></li>
+      </ul>
+      <div class="nav-right">
+        <span class="nav-user">Hello, <strong id="nav-name">—</strong></span>
+        <button class="btn-logout" onclick="logout()">Logout</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="page-content">
+    <div class="page-header">
+      <h1>🎯 Savings Goals</h1>
+      <p>Create goals, contribute regularly, and watch your savings grow.</p>
+    </div>
+
+    <div style="display:grid;grid-template-columns:360px 1fr;gap:28px;align-items:start">
+
+      <!-- Create Goal Form -->
+      <div class="form-card" style="position:sticky;top:80px">
+        <h2>New Goal</h2>
+        <p>Define a target and start saving towards it.</p>
+
+        <div id="goal-alert"></div>
+
+        <div class="form-group">
+          <label>Goal Name</label>
+          <input type="text" id="g-name" placeholder="e.g. Buy Laptop, Trip to Goa" />
+        </div>
+
+        <div class="form-group">
+          <label>Target Amount (₹)</label>
+          <input type="number" id="g-target" placeholder="e.g. 50000" min="1" />
+        </div>
+
+        <div class="form-group">
+          <label>Deadline (optional)</label>
+          <input type="date" id="g-deadline" />
+        </div>
+
+        <button class="btn btn-primary" onclick="createGoal()">Create Goal →</button>
+      </div>
+
+      <!-- Goals List -->
+      <div>
+        <div class="card-header" style="margin-bottom:16px">
+          <span class="card-title" style="font-size:0.9rem;color:var(--text-secondary)">YOUR GOALS</span>
+          <button class="btn btn-outline btn-sm" onclick="loadGoals()">↻ Refresh</button>
+        </div>
+
+        <div id="goals-container">
+          <div class="loading"><div class="spinner"></div> Loading goals…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contribute Modal -->
+    <div id="contribute-modal" class="hidden" style="
+      position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;
+      align-items:center;justify-content:center;z-index:200;padding:20px">
+      <div class="form-card" style="max-width:400px;width:100%">
+        <h2>Contribute to Goal</h2>
+        <p id="modal-goal-name" style="color:var(--gold);font-size:1rem;margin-bottom:8px"></p>
+        <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:24px">
+          Balance: <strong id="modal-balance" class="mono" style="color:var(--text-primary)"></strong>
+        </p>
+
+        <div id="modal-alert"></div>
+
+        <div class="form-group">
+          <label>Contribution Amount (₹)</label>
+          <input type="number" id="modal-amount" placeholder="e.g. 500" min="1" />
+        </div>
+
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" onclick="submitContribution()" style="flex:1">Contribute →</button>
+          <button class="btn btn-outline" onclick="closeModal()" style="flex:0 0 auto">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="script.js"></script>
+  <script>
+    const student = requireAuth();
+    document.getElementById('nav-name').textContent = student.name;
+
+    let selectedGoalId = null;
+
+    async function loadGoals() {
+      const el = document.getElementById('goals-container');
+      el.innerHTML = '<div class="loading"><div class="spinner"></div> Loading…</div>';
+      try {
+        const data = await apiFetch(`/api/goals/student/${student.student_id}`);
+        if (!data.goals.length) {
+          el.innerHTML = `
+            <div class="empty-state" style="border:1px solid var(--border);border-radius:var(--radius);padding:60px 24px">
+              <div class="icon">🎯</div>
+              <h3>No Goals Yet</h3>
+              <p>Use the form on the left to create your first savings goal!</p>
+            </div>`;
+          return;
+        }
+
+        const active    = data.goals.filter(g => g.status === 'active');
+        const completed = data.goals.filter(g => g.status === 'completed');
+        const cancelled = data.goals.filter(g => g.status === 'cancelled');
+
+        let html = '';
+        if (active.length)    html += `<div class="card-title" style="margin-bottom:14px">Active Goals</div><div class="goals-grid">${active.map(goalCard).join('')}</div>`;
+        if (completed.length) html += `<div class="card-title" style="margin:24px 0 14px">Completed 🎉</div><div class="goals-grid">${completed.map(goalCard).join('')}</div>`;
+        if (cancelled.length) html += `<div class="card-title" style="margin:24px 0 14px">Cancelled</div><div class="goals-grid">${cancelled.map(goalCard).join('')}</div>`;
+
+        el.innerHTML = html;
+      } catch (e) {
+        el.innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+      }
+    }
+
+    function goalCard(g) {
+      const pct      = Math.min(parseFloat(g.progress_pct), 100);
+      const daysLeft = g.deadline
+        ? Math.ceil((new Date(g.deadline) - new Date()) / 86400000)
+        : null;
+
+      return `
+        <div class="goal-card ${g.status}">
+          <div class="goal-header">
+            <span class="goal-name">${g.goal_name}</span>
+            <span class="badge badge-${g.status}">${g.status}</span>
+          </div>
+
+          <div class="goal-amounts">
+            <span>Saved: <strong>₹${parseFloat(g.saved_amount).toLocaleString('en-IN')}</strong></span>
+            <span>Target: <strong>₹${parseFloat(g.target_amount).toLocaleString('en-IN')}</strong></span>
+          </div>
+
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:${pct}%"></div>
+          </div>
+          <div class="progress-label">
+            <span>${pct}% complete</span>
+            ${daysLeft !== null
+              ? `<span style="color:${daysLeft < 7 ? 'var(--red)' : 'var(--text-muted)'}">${daysLeft > 0 ? daysLeft + ' days left' : 'Overdue'}</span>`
+              : ''}
+          </div>
+
+          ${g.status === 'active' ? `
+            <div class="goal-actions">
+              <button class="btn btn-primary btn-sm" style="flex:1" onclick="openContribute(${g.goal_id}, '${g.goal_name.replace(/'/g, "\\'")}')">+ Contribute</button>
+              <button class="btn btn-danger" onclick="cancelGoal(${g.goal_id})">Cancel</button>
+            </div>` : ''}
+        </div>`;
+    }
+
+    async function createGoal() {
+      const goal_name     = document.getElementById('g-name').value.trim();
+      const target_amount = parseFloat(document.getElementById('g-target').value);
+      const deadline      = document.getElementById('g-deadline').value;
+
+      if (!goal_name || !target_amount || target_amount <= 0)
+        return showAlert('goal-alert', 'Please enter goal name and a valid target amount.', 'error');
+
+      try {
+        await apiFetch('/api/goals', {
+          method: 'POST',
+          body: JSON.stringify({ student_id: student.student_id, goal_name, target_amount, deadline: deadline || undefined }),
+        });
+        showAlert('goal-alert', `✅ Goal "${goal_name}" created!`, 'success');
+        document.getElementById('g-name').value     = '';
+        document.getElementById('g-target').value   = '';
+        document.getElementById('g-deadline').value = '';
+        loadGoals();
+      } catch (e) {
+        showAlert('goal-alert', e.message, 'error');
+      }
+    }
+
+    async function openContribute(goalId, goalName) {
+      selectedGoalId = goalId;
+      document.getElementById('modal-goal-name').textContent = goalName;
+      document.getElementById('modal-amount').value = '';
+      document.getElementById('modal-alert').innerHTML = '';
+
+      // Load current balance
+      try {
+        const data = await apiFetch(`/api/students/${student.student_id}/dashboard`);
+        document.getElementById('modal-balance').textContent =
+          `₹${parseFloat(data.account.balance).toLocaleString('en-IN', {minimumFractionDigits:2})}`;
+      } catch { document.getElementById('modal-balance').textContent = '—'; }
+
+      document.getElementById('contribute-modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('contribute-modal').classList.add('hidden');
+      selectedGoalId = null;
+    }
+
+    async function submitContribution() {
+      const amount = parseFloat(document.getElementById('modal-amount').value);
+      if (!amount || amount <= 0)
+        return showModalAlert('Please enter a valid amount.', 'error');
+
+      try {
+        const data = await apiFetch(`/api/goals/${selectedGoalId}/contribute`, {
+          method: 'POST',
+          body: JSON.stringify({ student_id: student.student_id, amount }),
+        });
+        showModalAlert(data.message, 'success');
+        setTimeout(() => { closeModal(); loadGoals(); }, 1500);
+      } catch (e) {
+        showModalAlert(e.message, 'error');
+      }
+    }
+
+    async function cancelGoal(goalId) {
+      if (!confirm('Are you sure you want to cancel this goal?')) return;
+      try {
+        await apiFetch(`/api/goals/${goalId}?student_id=${student.student_id}`, { method: 'DELETE' });
+        loadGoals();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    function showAlert(id, msg, type) {
+      const el = document.getElementById(id);
+      el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+      setTimeout(() => el.innerHTML = '', 5000);
+    }
+
+    function showModalAlert(msg, type) {
+      const el = document.getElementById('modal-alert');
+      el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('contribute-modal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    loadGoals();
+  </script>
+</body>
+</html>
