@@ -27,7 +27,7 @@ transactions, constraints, and financial data management.
 Many students receive a fixed amount of money for a specific time period (weekly or monthly). Often, they spend a large portion early and face financial shortages later.
 </p>
 
-<p>This system solves that problem by:</p>
+<p>This system solves that problem by:-</p>
 
 <ul>
 <li>Distributing deposited money over time</li>
